@@ -97,10 +97,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
           <div id='instruction'>Waiting...</div>
         </div>
 
-        <div class='row' style='display:flex; justify-content:center;'>
-          <button id='autoBtn' style='width:100%; padding:20px; font-size:20px; font-weight:bold; border-radius:15px; border:none; background:#e4e6eb; color:#1c1e21; cursor:pointer; transition:all 0.3s;'>
-            START AUTOPILOT
+        <div class='row' style='display:flex; justify-content:center; gap:10px;'>
+          <button id='autoBtn' style='flex:2; padding:20px; font-size:18px; font-weight:bold; border-radius:15px; border:none; background:#e4e6eb; color:#1c1e21; cursor:pointer; transition:all 0.3s;'>
+            AUTOPILOT
           </button>
+        </div>
+
+        <div class='row' style='display:flex; justify-content:center; gap:10px;'>
+          <button class='catBtn' data-id='UP' style='flex:1; padding:15px; font-size:16px; font-weight:bold; border-radius:12px; border:none; background:#42b72a; color:#fff; cursor:pointer;'>UP</button>
+          <button class='catBtn' data-id='MIDDLE' style='flex:1; padding:15px; font-size:16px; font-weight:bold; border-radius:12px; border:none; background:#1877f2; color:#fff; cursor:pointer;'>MID</button>
+          <button class='catBtn' data-id='DOWN' style='flex:1; padding:15px; font-size:16px; font-weight:bold; border-radius:12px; border:none; background:#fb3958; color:#fff; cursor:pointer;'>DOWN</button>
         </div>
 
         <div class='row'><div id='joy'><div id='stick'></div></div></div>
@@ -136,16 +142,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         autoBtn.onclick=()=>{
           auto = !auto;
           if(auto){
-            autoBtn.textContent = 'STOP AUTOPILOT';
             autoBtn.style.background = '#fb3958';
             autoBtn.style.color = '#fff';
           } else {
-            autoBtn.textContent = 'START AUTOPILOT';
             autoBtn.style.background = '#e4e6eb';
             autoBtn.style.color = '#1c1e21';
           }
           fetch(`/btn?id=AUTO`).catch(()=>{});
         };
+
+        document.querySelectorAll('.catBtn').forEach(b => {
+          b.onclick=()=>{
+            const id = b.getAttribute('data-id');
+            fetch(`/btn?id=${id}`).catch(()=>{});
+          };
+        });
 
         function posToXY(cX,cY){
           const r=joy.getBoundingClientRect();
@@ -158,7 +169,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
           
           if(x!==0 || y!==0) {
              // Disable visual autopilot button if manual control starts
-             if(auto){ auto=false; autoBtn.textContent='START AUTOPILOT'; autoBtn.style.background='#e4e6eb'; autoBtn.style.color='#1c1e21'; }
+             if(auto){ auto=false; autoBtn.style.background='#e4e6eb'; autoBtn.style.color='#1c1e21'; }
           }
 
           updateStatus(); sendDrive();
@@ -191,6 +202,8 @@ threading.Thread(target=start_server, daemon=True).start()
 
 def nothing(x):
     pass
+  
+clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
 
 # Create a window for trackbars to tune the color and middle region
 cv2.namedWindow("Tuning")
@@ -204,23 +217,74 @@ cv2.createTrackbar("Mid Width", "Tuning", 90, 300, nothing)
 # Mode: 0=Manual, 1=Red, 2=White
 cv2.createTrackbar("Mode", "Tuning", 1, 2, nothing)
 
-cap = cv2.VideoCapture(1)
+import os
 
-# Initialize CLAHE
-clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+# This environment variable helps some Windows setups handle virtual cams
+os.environ["OPENCV_VIDEOIO_PRIORITY_MSMF"] = "0"
+
+# Camera setup logic
+def open_camera(index):
+    print(f"Attempting to open camera at index {index}...")
+    cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        print(f"Failed to open camera index {index}.")
+        return None
+    
+    # Give it a moment to pull a frame
+    timeout = time.time() + 2
+    while time.time() < timeout:
+        ret, frame = cap.read()
+        if ret and frame is not None:
+            print(f"Camera index {index} connected successfully!")
+            return cap
+        time.sleep(0.1)
+    
+    print(f"Opened index {index} but no stream received.")
+    cap.release()
+    return None
+
+current_index = 1
+cap = open_camera(current_index)
+if cap is None:
+    current_index = 0
+    cap = open_camera(current_index)
 
 while True:
-    ret, frame = cap.read()
-    if not ret:
-        print("Error: Could not read frame")
-        break
+    if cap is not None:
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            print("Stream interrupted. Retrying...")
+            time.sleep(0.1)
+            continue
+    else:
+        # Placeholder or empty frame if no camera is active
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv2.putText(frame, "No Camera Selected (Press 'N')", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+    # Show the absolute RAWest footage to verify connection
+    cv2.imshow("DIAGNOSTIC_FEED", frame) 
     
-    # Rotate 90 degrees counter-clockwise
-    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    height, width = frame.shape[:2]
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord("q"):
+        break
+    elif key == ord("n"):
+        print("Cycling camera index...")
+        current_index = (current_index + 1) % 3
+        if cap: cap.release()
+        cap = open_camera(current_index)
+        continue
+
+    if cap is None:
+        time.sleep(0.1)
+        continue
+    
+    # Resume your existing logic
+    # The image might be rotated or processed differently depending on the camera
+    frame_processed = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    height, width = frame_processed.shape[:2]
     
     # Preprocessing
-    blurred = cv2.GaussianBlur(frame, (5, 5), 0)
+    blurred = cv2.GaussianBlur(frame_processed, (5, 5), 0)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
     v = clahe.apply(v)
@@ -255,10 +319,10 @@ while True:
     cx_bottom, cx_top = None, None
     if M_bottom["m00"] > 100:
         cx_bottom = int(M_bottom["m10"] / M_bottom["m00"])
-        cv2.circle(frame, (cx_bottom, int(M_bottom["m01"] / M_bottom["m00"]) + int(height*0.8)), 8, (0, 0, 255), -1)
+        cv2.circle(frame_processed, (cx_bottom, int(M_bottom["m01"] / M_bottom["m00"]) + int(height*0.8)), 8, (0, 0, 255), -1)
     if M_top["m00"] > 100:
         cx_top = int(M_top["m10"] / M_top["m00"])
-        cv2.circle(frame, (cx_top, int(M_top["m01"] / M_top["m00"]) + int(height*0.6)), 8, (0, 255, 255), -1)
+        cv2.circle(frame_processed, (cx_top, int(M_top["m01"] / M_top["m00"]) + int(height*0.6)), 8, (0, 255, 255), -1)
 
         
     target_msg = "searching"
@@ -316,14 +380,14 @@ while True:
         last_send_time = current_time
     
     # UI
-    cv2.line(frame, (left_bound, 0), (left_bound, height), (255, 0, 0), 2)
-    cv2.line(frame, (right_bound, 0), (right_bound, height), (255, 0, 0), 2)
-    cv2.putText(frame, target_msg, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.imshow("Robot view", frame)
+    cv2.line(frame_processed, (left_bound, 0), (left_bound, height), (255, 0, 0), 2)
+    cv2.line(frame_processed, (right_bound, 0), (right_bound, height), (255, 0, 0), 2)
+    cv2.putText(frame_processed, target_msg, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+    cv2.putText(frame_processed, f"Camera: {current_index}", (10, height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.imshow("Robot view", frame_processed)
     cv2.imshow("Mask", mask)
     
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+    # No waitKey needed here, we handle it above
 
 cap.release()
 cv2.destroyAllWindows()

@@ -18,15 +18,12 @@ Controller controller("iPhone de Cyprien", "cypcyp974");
 // -------------------- Servo (Catapult) --------------------
 Servo catapult;
 
-// Tune these
-static const int RETRACT_ANGLE = 180;  // was 0
+// Specific values from user
+static const int UP_ANGLE = 45;
+static const int DOWN_ANGLE = 25;
+static const int MIDDLE_ANGLE = 35;
 
-// Different “huck levels” mirrored (was 95/115/135)
-static const int HUCK1_ANGLE = 85;  // 95
-static const int HUCK2_ANGLE = 65;  // 115
-static const int HUCK3_ANGLE = 45;  // 135
-
-volatile int targetAngle = RETRACT_ANGLE;
+volatile int targetAngle = DOWN_ANGLE; // Start in middle as per provided snippet pattern
 
 // -------------------- Wheel drive tuning --------------------
 int wheelTrim = 0;  // + => left stronger, - => right stronger
@@ -160,6 +157,10 @@ void onMessage(const String& msg) {
     return;
   }
 
+  if (msg == "btn:UP") { btnUp(); return; }
+  if (msg == "btn:DOWN") { btnDown(); return; }
+  if (msg == "btn:MIDDLE") { btnMiddle(); return; }
+
   if (!autoPilot) return;
 
   // Speeds: Increased slightly to overcome stall friction (stopping the 'screaming')
@@ -196,21 +197,17 @@ void btnStop() {
   Serial.println("MACRO: STOP");
 }
 
-void btnRetract() {
-  targetAngle = RETRACT_ANGLE;
-  Serial.println("SERVO: RETRACT");
+void btnUp() {
+  targetAngle = UP_ANGLE;
+  Serial.println("SERVO: UP");
 }
-void btnH1() {
-  targetAngle = HUCK1_ANGLE;
-  Serial.println("SERVO: H1");
+void btnDown() {
+  targetAngle = DOWN_ANGLE;
+  Serial.println("SERVO: DOWN");
 }
-void btnH2() {
-  targetAngle = HUCK2_ANGLE;
-  Serial.println("SERVO: H2");
-}
-void btnH3() {
-  targetAngle = HUCK3_ANGLE;
-  Serial.println("SERVO: H3");
+void btnMiddle() {
+  targetAngle = MIDDLE_ANGLE;
+  Serial.println("SERVO: MIDDLE");
 }
 
 void btnTrimL() {
@@ -248,16 +245,15 @@ void setup() {
   pinMode(IN4, OUTPUT);
 
   catapult.attach(SERVO_PIN);
-  catapult.write(RETRACT_ANGLE);
+  catapult.write(MIDDLE_ANGLE);
 
   // No spaces in button names
   controller.registerButton("RUN", btnRun);
   controller.registerButton("STOP", btnStop);
 
-  controller.registerButton("RETRACT", btnRetract);
-  controller.registerButton("H1", btnH1);
-  controller.registerButton("H2", btnH2);
-  controller.registerButton("H3", btnH3);
+  controller.registerButton("UP", btnUp);
+  controller.registerButton("DOWN", btnDown);
+  controller.registerButton("MIDDLE", btnMiddle);
 
   controller.registerButton("TRIML", btnTrimL);
   controller.registerButton("TRIMR", btnTrimR);
