@@ -4,7 +4,7 @@ import urllib.request
 import time
 
 # Arduino IP (Update this with the IP shown in Serial Monitor)
-ROBOT_IP = "10.0.0.2" 
+ROBOT_IP = "172.20.10.12" 
 last_instruction = ""
 last_send_time = 0
 SEND_INTERVAL = 0.5 # seconds

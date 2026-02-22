@@ -107,10 +107,12 @@ bool Controller::beginSTA(bool debug) {
         motorInitSafeStop();
     }
 
-    Serial.print("Connecting to WiFi: ");
+    Serial.println("  [Controller] Init WiFi...");
+    Serial.print("  [Controller] Connecting to SSID: ");
     Serial.println(_ssid);
 
     _status = WiFi.begin(_ssid, _password);
+    Serial.println("  [Controller] WiFi.begin() called. Waiting for link...");
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
