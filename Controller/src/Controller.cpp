@@ -96,6 +96,50 @@ bool Controller::beginAP(bool debug) {
     return true;
 }
 
+bool Controller::beginSTA(bool debug) {
+    if (_ledEnabled) setLedStateHold(LED_BOOTING, 1500);
+    _debug = debug;
+
+    if (_l298nEnabled) {
+        pinMode(_in1, OUTPUT); pinMode(_in2, OUTPUT);
+        pinMode(_in3, OUTPUT); pinMode(_in4, OUTPUT);
+        pinMode(_ena, OUTPUT); pinMode(_enb, OUTPUT);
+        motorInitSafeStop();
+    }
+
+    Serial.print("Connecting to WiFi: ");
+    Serial.println(_ssid);
+
+    _status = WiFi.begin(_ssid, _password);
+
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+        delay(500);
+        Serial.print(".");
+        if (_ledEnabled) {
+            _ledLevel = !_ledLevel;
+            digitalWrite(_ledPin, _ledLevel);
+        }
+    }
+
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("\nFailed to connect to WiFi");
+        setLedStateForce(LED_ERROR);
+        return false;
+    }
+
+    Serial.println("\nWiFi Connected!");
+    setLedState(LED_AP_READY);
+
+    _server.begin();
+
+    _lastDriveMs = millis();
+    _failsafeStopped = false;
+
+    printWiFiStatus();
+    return true;
+}
+
 void Controller::update() {
     // Handle ONE incoming client per loop; keep loop fast
     WiFiClient client = _server.available();

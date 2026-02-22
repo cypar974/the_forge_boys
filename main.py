@@ -3,8 +3,8 @@ import numpy as np
 import urllib.request
 import time
 
-# Arduino IP
-ROBOT_IP = "10.0.0.2"
+# Arduino IP (Update this with the IP shown in Serial Monitor)
+ROBOT_IP = "10.0.0.2" 
 last_instruction = ""
 last_send_time = 0
 SEND_INTERVAL = 0.5 # seconds

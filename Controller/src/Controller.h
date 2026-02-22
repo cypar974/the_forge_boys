@@ -14,6 +14,10 @@ public:
 
     // Start AP + HTTP server (optional debug flag for prints)
     bool beginAP(bool debug = false);
+    
+    // Start STA (connect to existing WiFi) + HTTP server
+    bool beginSTA(bool debug = false);
+
     void update();
 
     // Optional generic message callback

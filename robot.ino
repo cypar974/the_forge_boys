@@ -13,7 +13,7 @@ static const int IN4 = 4;
 static const int SERVO_PIN = 12;
 
 // -------------------- WiFi Controller --------------------
-Controller controller("1738", "12345678");
+Controller controller("iPhone de Cyprien", "cypcyp974");
 
 // -------------------- Servo (Catapult) --------------------
 Servo catapult;
@@ -166,7 +166,7 @@ void setup() {
   controller.registerButton("TRIML", btnTrimL);
   controller.registerButton("TRIMR", btnTrimR);
 
-  controller.beginAP(true);
+  controller.beginSTA(true);
 }
 
 void loop() {
