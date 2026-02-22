@@ -35,8 +35,8 @@ while True:
         print("Error: Could not read frame")
         break
     
-    # Rotate 90 degrees clockwise
-    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    # Rotate 90 degrees counter-clockwise (180 deg change from previous)
+    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
     height, width = frame.shape[:2]
     
     # 1. Preprocessing: Gaussian Blur to reduce noise
@@ -48,6 +48,11 @@ while True:
     v = clahe.apply(v)
     hsv_normalized = cv2.merge([h, s, v])
     
+    # Check if 'Tuning' window is still open
+    if cv2.getWindowProperty("Tuning", cv2.WND_PROP_VISIBLE) < 1:
+        print("Tuning window closed. Exiting.")
+        break
+
     # Get current trackbar positions
     l_h = cv2.getTrackbarPos("L-H", "Tuning")
     l_s = cv2.getTrackbarPos("L-S", "Tuning")
