@@ -200,7 +200,7 @@ cv2.createTrackbar("L-V", "Tuning", 0, 255, nothing)
 cv2.createTrackbar("U-H", "Tuning", 179, 179, nothing)
 cv2.createTrackbar("U-S", "Tuning", 255, 255, nothing)
 cv2.createTrackbar("U-V", "Tuning", 255, 255, nothing)
-cv2.createTrackbar("Mid Width", "Tuning", 40, 300, nothing)
+cv2.createTrackbar("Mid Width", "Tuning", 90, 300, nothing)
 # Mode: 0=Manual, 1=Red, 2=White
 cv2.createTrackbar("Mode", "Tuning", 1, 2, nothing)
 
@@ -248,16 +248,18 @@ while True:
     mid_x = width // 2
     left_bound, right_bound = mid_x - mid_width, mid_x + mid_width
     
-    M_bottom = cv2.moments(mask[int(height*0.75):height, :])
-    M_top = cv2.moments(mask[int(height*0.5):int(height*0.75), :])
+    M_bottom = cv2.moments(mask[int(height*0.8):height, :])
+    M_top = cv2.moments(mask[int(height*0.6):int(height*0.8), :])
+
     
     cx_bottom, cx_top = None, None
     if M_bottom["m00"] > 100:
         cx_bottom = int(M_bottom["m10"] / M_bottom["m00"])
-        cv2.circle(frame, (cx_bottom, int(M_bottom["m01"] / M_bottom["m00"]) + int(height*0.75)), 8, (0, 0, 255), -1)
+        cv2.circle(frame, (cx_bottom, int(M_bottom["m01"] / M_bottom["m00"]) + int(height*0.8)), 8, (0, 0, 255), -1)
     if M_top["m00"] > 100:
         cx_top = int(M_top["m10"] / M_top["m00"])
-        cv2.circle(frame, (cx_top, int(M_top["m01"] / M_top["m00"]) + int(height*0.5)), 8, (0, 255, 255), -1)
+        cv2.circle(frame, (cx_top, int(M_top["m01"] / M_top["m00"]) + int(height*0.6)), 8, (0, 255, 255), -1)
+
         
     target_msg = "searching"
     
@@ -266,15 +268,17 @@ while True:
     # If only one is seen, we turn if it is outside.
     
     if cx_bottom is not None and cx_top is not None:
-        # Both visible - if top is already turning, we should start turning early
-        if cx_bottom < left_bound or cx_top < left_bound:
+        # Both visible - only turn early if top is SIGNFICANTLY off-center (buffer)
+        lookahead_buffer = mid_width * 2
+        if cx_bottom < left_bound or cx_top < (mid_x - lookahead_buffer):
             target_msg = "go left"
             last_direction = "left"
-        elif cx_bottom > right_bound or cx_top > right_bound:
+        elif cx_bottom > right_bound or cx_top > (mid_x + lookahead_buffer):
             target_msg = "go right"
             last_direction = "right"
         else:
             target_msg = "good"
+
             
     elif cx_bottom is not None:
         # Only bottom visible

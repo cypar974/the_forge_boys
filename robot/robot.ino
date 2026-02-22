@@ -164,7 +164,8 @@ void onMessage(const String& msg) {
 
   // Speeds: Increased slightly to overcome stall friction (stopping the 'screaming')
   int pwr = 100;      // ~39% speed
-  int turnPwr = 135;   // Increased to 135 (from 105) for more decisive turning
+  int turnPwr = 110;   // Lowered from 135 to reduce aggression
+
 
 
   if (msg == "go left") {
@@ -235,7 +236,8 @@ void setup() {
   Serial.println("============================");
 
   controller.configureL298N(ENA, IN1, IN2, ENB, IN3, IN4);
-  controller.setMotorMinPWM(100); // Increased to overcome stalling/screaming
+  controller.setMotorMinPWM(80); // Lowered from 100 to make manual/auto turns smoother
+
   controller.setFailsafeTimeoutMs(1000);
 
   pinMode(ENA, OUTPUT);
