@@ -77,17 +77,21 @@ bool Controller::beginAP(bool debug) {
     WiFi.config(IPAddress(10, 0, 0, 2));
 
     _status = WiFi.beginAP(_ssid, _password);
-
-    if (_status != WL_AP_LISTENING && _status != WL_AP_CONNECTED) {
-        Serial.println("Failed to start AP mode");
-        setLedStateForce(LED_ERROR);
+    if (_status != WL_AP_LISTENING) {
+        if (debug) Serial.println("Failed to start AP");
+        setLedState(LED_ERROR);
         return false;
     }
-    setLedState(LED_AP_READY);
 
-    delay(2000);
     _server.begin();
+    _udp.begin(UDP_PORT);
 
+    if (debug) {
+        Serial.println("AP Mode Started");
+        Serial.print("UDP listening on port: ");
+        Serial.println(UDP_PORT);
+        printWiFiStatus();
+    }
     _lastDriveMs = millis();
     _failsafeStopped = false;
 
@@ -113,11 +117,12 @@ bool Controller::beginSTA(bool debug) {
 
     _status = WiFi.begin(_ssid, _password);
     Serial.println("  [Controller] WiFi.begin() called. Waiting for link...");
-
+    
+    // Wait for connection
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
         delay(500);
-        Serial.print(".");
+        if (debug) Serial.print(".");
         if (_ledEnabled) {
             _ledLevel = !_ledLevel;
             digitalWrite(_ledPin, _ledLevel);
@@ -125,15 +130,20 @@ bool Controller::beginSTA(bool debug) {
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("\nFailed to connect to WiFi");
+        if (debug) Serial.println("\nFailed to connect to WiFi");
         setLedStateForce(LED_ERROR);
         return false;
     }
 
-    Serial.println("\nWiFi Connected!");
+    if (debug) Serial.println("\nWiFi Connected!");
     setLedState(LED_AP_READY);
 
     _server.begin();
+    _udp.begin(UDP_PORT);
+    if (debug) {
+        Serial.print("UDP listening on port: ");
+        Serial.println(UDP_PORT);
+    }
 
     _lastDriveMs = millis();
     _failsafeStopped = false;
@@ -143,14 +153,20 @@ bool Controller::beginSTA(bool debug) {
 }
 
 void Controller::update() {
-    // Handle ONE incoming client per loop; keep loop fast
-    WiFiClient client = _server.available();
-    if (client) {
-        client.setTimeout(30);
+    processUDP();
+    
+    // Handle pending clients (up to 4 per loop to keep it responsive)
+    for (int i = 0; i < 4; i++) {
+        WiFiClient client = _server.available();
+        if (!client) break;
+        
+        if (_debug) Serial.println("> [Server] New client");
+        client.setTimeout(150); // Fast timeout
         handleClient(client);
-        delay(1);
-        client.stop();
+        client.flush();
+        client.stop(); // Explicitly stop after flush
     }
+    delay(2); // Small yield for WiFi stack
 
     // Failsafe check
     const unsigned long now = millis();
@@ -275,23 +291,25 @@ void Controller::setMotorMinPWM(uint8_t pwm) {
 String Controller::readRequestLine(WiFiClient& client) {
     unsigned long start = millis();
     while (client.connected() && !client.available()) {
-        if (millis() - start > 30) return "";
+        if (millis() - start > 150) return ""; // 150ms timeout for first line
         delay(1);
     }
     String line = client.readStringUntil('\n');
     line.trim();
+    if (_debug && line.length() > 0) {
+        Serial.print("  [Server] Req: ");
+        Serial.println(line);
+    }
     return line;
 }
 
 void Controller::sendHttpOk(WiFiClient& client, const char* contentType, const String& body) {
-    client.println("HTTP/1.1 200 OK");
-    client.print("Content-Type: ");
-    client.println(contentType);
-    client.println("Connection: close");
-    client.print("Content-Length: ");
-    client.println(body.length());
-    client.println();
-    client.print(body);
+    String resp = "HTTP/1.1 200 OK\r\n";
+    resp += "Content-Type: " + String(contentType) + "\r\n";
+    resp += "Connection: close\r\n";
+    resp += "Content-Length: " + String(body.length()) + "\r\n\r\n";
+    resp += body;
+    client.print(resp);
 }
 
 void Controller::sendHttpNotFound(WiFiClient& client) {
@@ -334,51 +352,81 @@ bool Controller::extractQueryInt(const String& requestLine, const char* key, int
 }
 
 void Controller::handleClient(WiFiClient& client) {
+    unsigned long hStart = millis();
     String requestLine = readRequestLine(client);
     if (requestLine.length() == 0) return;
 
-    // Drain headers
-    while (client.connected()) {
-        String h = client.readStringUntil('\n');
-        if (h == "\r" || h.length() == 0) break;
+    // Fast drain headers: we only care about the GET line
+    unsigned long start = millis();
+    while (client.connected() && (millis() - start < 150)) {
+        if (client.available()) {
+            client.read(); // Just dump the byte, much faster than readStringUntil
+        } else {
+            delay(1);
+        }
     }
 
+    bool handled = true;
     if (requestLine.startsWith("GET / ") || requestLine.startsWith("GET /?")) {
         handleRoot(client);
         setLedStateHold(LED_CLIENT_CONNECTED, 2000);
-        return;
     }
-
-    if (requestLine.startsWith("GET /drive")) {
+    else if (requestLine.startsWith("GET /drive")) {
         handleDrive(client, requestLine);
-        return;
     }
-
-    if (requestLine.startsWith("GET /btn?")) {
+    else if (requestLine.startsWith("GET /btn?")) {
         handleBtn(client, requestLine);
-        return;
     }
-    if (requestLine.startsWith("GET /sld?")) {
+    else if (requestLine.startsWith("GET /sld?")) {
         handleSlider(client, requestLine);
-        return;
     }
-
-    if (requestLine.startsWith("GET /control?msg=")) {
+    else if (requestLine.startsWith("GET /control?msg=")) {
         handleControlMsg(client, requestLine);
-        return;
     }
-
-    if (requestLine.startsWith("GET /health ")) {
+    else if (requestLine.startsWith("GET /health")) {
         handleHealth(client);
-        return;
     }
-
-    if (requestLine.startsWith("GET /status ")) {
+    else if (requestLine.startsWith("GET /status")) {
         handleStatus(client);
-        return;
+    }
+    else if (requestLine.startsWith("GET /favicon.ico")) {
+        sendHttpNotFound(client);
+    }
+    else {
+        sendHttpNotFound(client);
+        handled = false;
     }
 
-    sendHttpNotFound(client);
+    if (_debug) {
+        if (!handled) Serial.println("  [Server] 404 Not Found");
+        Serial.print("  [Server] Done in ");
+        Serial.print(millis() - hStart);
+        Serial.println("ms");
+    }
+}
+
+void Controller::processUDP() {
+    int packetSize = _udp.parsePacket();
+    if (packetSize > 0) {
+        char packetBuffer[64];
+        int len = _udp.read(packetBuffer, 63);
+        if (len > 0) {
+            packetBuffer[len] = 0;
+            String msg = String(packetBuffer);
+            msg.trim();
+            
+            if (_debug) {
+                Serial.print("  [UDP] Recv: ");
+                Serial.println(msg);
+            }
+            
+            if (_onMessage) _onMessage(msg);
+            _uiInstruction = msg;
+            
+            // Note: UDP doesn't reset failsafe for safety (stick to joystick for that)
+            // or we could add it if requested.
+        }
+    }
 }
 
 void Controller::handleHealth(WiFiClient& client) {
@@ -638,36 +686,15 @@ void Controller::handleRoot(WiFiClient& client) {
     page += "<meta name='viewport' content='width=device-width,initial-scale=1'/>";
     page += "<title>Robot Controller</title>";
     page += "<style>";
-  page += "#thrRow{margin-top:10px;}";
-  page += ".thrHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}";
-  page += ".thrLabel{font-size:16px;font-weight:600;}";
-  page += ".thrValue{font-size:16px;font-variant-numeric:tabular-nums;opacity:.9;}";
-
-// Make the slider easy to drag
-  page += "input.thr{width:100%;height:42px;-webkit-appearance:none;appearance:none;background:transparent;touch-action:none;}";
-
-// Track
-  page += "input.thr::-webkit-slider-runnable-track{height:12px;border-radius:999px;background:#ddd;border:1px solid #333;}";
-  page += "input.thr::-moz-range-track{height:12px;border-radius:999px;background:#ddd;border:1px solid #333;}";
-
-// Thumb (big + easy to grab)
-  page += "input.thr::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:34px;height:34px;border-radius:50%;background:#333;border:2px solid #fff;margin-top:-12px;box-shadow:0 2px 6px rgba(0,0,0,.25);}";
-  page += "input.thr::-moz-range-thumb{width:34px;height:34px;border-radius:50%;background:#333;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.25);}";
-
-// Optional: show active focus without ugly outline
-    page += "input.thr:focus{outline:none;}";
-    page += "body{font-family:system-ui,Arial;margin:16px;}";
-    page += "#wrap{max-width:520px;margin:0 auto;}";
-    page += ".row{margin:14px 0;}";
-    page += "button{padding:12px 16px;font-size:16px;border-radius:12px;border:1px solid #333;background:#f2f2f2;}";
-    page += ".uBtn{margin:6px 8px 6px 0;}";
-    page += "#joy{width:260px;height:260px;border:2px solid #333;border-radius:18px;";
-    page += "touch-action:none; position:relative; user-select:none; -webkit-user-select:none;}";
-    page += "#stick{width:70px;height:70px;border-radius:50%;background:#333;opacity:.85;";
-    page += "position:absolute;left:95px;top:95px;}";
-    page += "label{display:block;margin-bottom:6px;}";
-    page += "input[type=range]{width:100%;}";
-    page += "#status{font-family:ui-monospace,Menlo,monospace; white-space:pre;}";
+    page += "body{font-family:system-ui,sans-serif;margin:15px;background:#f8f9fa;color:#333}";
+    page += "#wrap{max-width:480px;margin:0 auto}";
+    page += ".row{margin:15px 0}";
+    page += ".uBtn{padding:12px 18px;font-size:16px;border-radius:10px;border:1px solid #ddd;background:#fff;margin:0 5px 5px 0;cursor:pointer}";
+    page += "#joy{width:240px;height:240px;border:2px solid #ccc;border-radius:50%;margin:0 auto;position:relative;background:#fff;touch-action:none}";
+    page += "#stick{width:60px;height:60px;background:#333;border-radius:50%;position:absolute;left:90px;top:90px}";
+    page += ".thrRow{background:#fff;padding:15px;border-radius:12px;border:1px solid #eee}";
+    page += "input[type=range]{width:100%;height:30px;cursor:pointer}";
+    page += "#status{font-size:11px;color:#999;font-family:monospace;margin-top:10px}";
     page += "</style></head><body><div id='wrap'>";
     page += "<h2>Robot Controller</h2>";
 
@@ -686,13 +713,12 @@ void Controller::handleRoot(WiFiClient& client) {
 
     page += "<div class='row'><div id='joy'><div id='stick'></div></div></div>";
 
-    page += "<div class='row' id='thrRow'>";
-    page += "  <div class='thrHeader'>";
-    page += "    <div class='thrLabel'>Throttle</div>";
-    page += "    <div class='thrValue'><span id='tval'>100</span>%</div>";
-    page += "  </div>";
-    page += "  <input id='thr' class='thr' type='range' min='0' max='100' value='100' step='1'/>";
+    page += "<div class='row thrRow'>";
+    page += "  <label>Throttle: <span id='tval'>100</span>%</label>";
+    page += "  <input id='thr' type='range' min='0' max='100' value='100' step='1'/>";
     page += "</div>";
+
+    page += "<div id='status' style='font-size:12px; color:#888; font-family:monospace; margin-top:10px;'></div>";
 
     // --- JS (STOP priority even if a request is in-flight) + HEARTBEAT resend ---
     page += "<script>";
@@ -822,12 +848,15 @@ void Controller::handleRoot(WiFiClient& client) {
     page += "updateStatus('ready');";
     page += "sendDriveNow(true);";
 
-    // Polling for instructions
-    page += "setInterval(()=>{";
+    // Polling for instructions (sequential to avoid stacking)
+    page += "function pollStatus(){";
     page += "  fetch('/status?_='+Date.now()).then(r=>r.text()).then(t=>{";
-    page += "    document.getElementById('instruction').textContent = t;";
-    page += "  }).catch(()=>{});";
-    page += "}, 500);";
+    page += "    const el=document.getElementById('instruction');";
+    page += "    if(el) el.textContent=t;";
+    page += "  }).catch(()=>{})";
+    page += "  .finally(()=>{ setTimeout(pollStatus, 2500); });";
+    page += "}";
+    page += "pollStatus();";
 
     page += "</script>";
 

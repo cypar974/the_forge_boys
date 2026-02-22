@@ -2,12 +2,14 @@ import cv2
 import numpy as np
 import urllib.request
 import time
+import socket
 
 # Arduino IP (Update this with the IP shown in Serial Monitor)
 ROBOT_IP = "172.20.10.12" 
+UDP_PORT = 4210
 last_instruction = ""
 last_send_time = 0
-SEND_INTERVAL = 0.5 # seconds
+SEND_INTERVAL = 0.7 # seconds
 
 def nothing(x):
     pass
@@ -22,9 +24,12 @@ cv2.createTrackbar("U-S", "Tuning", 255, 255, nothing)
 cv2.createTrackbar("U-V", "Tuning", 255, 255, nothing)
 cv2.createTrackbar("Mid Width", "Tuning", 40, 300, nothing)
 # Mode: 0=Manual, 1=Red, 2=White
-cv2.createTrackbar("Mode", "Tuning", 0, 2, nothing)
+cv2.createTrackbar("Mode", "Tuning", 1, 2, nothing)
 
 cap = cv2.VideoCapture(1)
+
+# Persistent UDP socket for vision commands
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # Initialize CLAHE
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -112,57 +117,47 @@ while True:
         cv2.circle(frame, (cx_top, cy_top), 8, (0, 255, 255), -1)
         
     # 5. Determine and Print Containment Status
+    target_msg = "searching" # Default fallback
+    
     if cx_bottom is not None and cx_top is not None:
-        # Draw the line segment
         cv2.line(frame, (cx_bottom, cy_bottom), (cx_top, cy_top), (0, 255, 0), 3)
-        
-        # Check if fully contained
         if (left_bound < cx_bottom < right_bound) and (left_bound < cx_top < right_bound):
             status = "Fully Contained"
+            target_msg = "good"
             color = (0, 255, 0)
         else:
             status = "Partial/Outside"
+            # If not centered, determine which way to go
+            if cx_bottom < left_bound: target_msg = "go left"
+            elif cx_bottom > right_bound: target_msg = "go right"
+            else: target_msg = "good"
             color = (0, 0, 255)
             
         print(status)
         cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-    else:
+    elif cx_bottom is not None:
         # Fallback to general direction if one part is missing
-        if cx_bottom is not None:
-            if cx_bottom < left_bound:
-                direction = "left"
-            elif cx_bottom > right_bound:
-                direction = "right"
-            else:
-                direction = "good"
-            print(direction)
-            cv2.putText(frame, f"Searching... {direction}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            # Send instruction to Arduino
-            current_time = time.time()
-            instruction = f"go {direction}" if direction in ["left", "right"] else direction
-            
-            if instruction != last_instruction or (current_time - last_send_time) > SEND_INTERVAL:
-                try:
-                    url = f"http://{ROBOT_IP}/control?msg={instruction.replace(' ', '+')}"
-                    urllib.request.urlopen(url, timeout=0.1)
-                    last_instruction = instruction
-                    last_send_time = current_time
-                except Exception as e:
-                    pass
+        if cx_bottom < left_bound: target_msg = "go left"
+        elif cx_bottom > right_bound: target_msg = "go right"
+        else: target_msg = "good"
+        cv2.putText(frame, f"Searching... {target_msg}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     
-    # Handle "Fully Contained" case
-    if 'status' in locals() and status == "Fully Contained":
-        instruction = "good"
-        current_time = time.time()
-        if instruction != last_instruction or (current_time - last_send_time) > SEND_INTERVAL:
-            try:
-                url = f"http://{ROBOT_IP}/control?msg={instruction}"
-                urllib.request.urlopen(url, timeout=0.1)
-                last_instruction = instruction
-                last_send_time = current_time
-            except Exception as e:
-                pass
+    # 6. UDP Dispatch (High Speed)
+    current_time = time.time()
+    
+    # Send if:
+    # A) The instruction CHANGED (immediate response)
+    # B) 2.5 seconds passed since last heartbeat
+    is_change = (target_msg != last_instruction)
+    heartbeat_needed = (current_time - last_send_time > 2.5)
+    
+    if is_change or heartbeat_needed:
+        try:
+            sock.sendto(target_msg.encode(), (ROBOT_IP, UDP_PORT))
+            last_instruction = target_msg
+            last_send_time = current_time
+        except Exception:
+            pass
     
     # Draw boundaries
     cv2.line(frame, (left_bound, 0), (left_bound, height), (255, 0, 0), 2)

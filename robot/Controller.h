@@ -7,6 +7,8 @@
 
 #include <Arduino.h>
 #include <WiFiS3.h>
+#include <WiFiUdp.h>
+#include <Servo.h>
 
 class Controller {
 public:
@@ -69,6 +71,7 @@ enum LedState {
     void printWiFiStatus() const;
 
     void handleClient(WiFiClient& client);
+    void processUDP();
     String readRequestLine(WiFiClient& client);
 
     void sendHttpOk(WiFiClient& client, const char* contentType, const String& body);
@@ -123,7 +126,10 @@ private:
     const char* _ssid;
     const char* _password;
 
-    WiFiServer _server{80};
+    static const int UDP_PORT = 4210;
+
+    WiFiServer _server;
+    WiFiUDP _udp;
     int _status = WL_IDLE_STATUS;
 
 
