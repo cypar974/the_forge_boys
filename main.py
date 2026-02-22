@@ -147,9 +147,9 @@ while True:
     
     # Send if:
     # A) The instruction CHANGED (immediate response)
-    # B) 2.5 seconds passed since last heartbeat
+    # B) 0.1 seconds passed since last heartbeat (10Hz)
     is_change = (target_msg != last_instruction)
-    heartbeat_needed = (current_time - last_send_time > 2.5)
+    heartbeat_needed = (current_time - last_send_time > 0.1)
     
     if is_change or heartbeat_needed:
         try:

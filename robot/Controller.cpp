@@ -406,8 +406,9 @@ void Controller::handleClient(WiFiClient& client) {
 }
 
 void Controller::processUDP() {
-    int packetSize = _udp.parsePacket();
-    if (packetSize > 0) {
+    int packetSize;
+    // Drain ALL waiting packets to get the freshest one
+    while ((packetSize = _udp.parsePacket()) > 0) {
         char packetBuffer[64];
         int len = _udp.read(packetBuffer, 63);
         if (len > 0) {
@@ -415,16 +416,15 @@ void Controller::processUDP() {
             String msg = String(packetBuffer);
             msg.trim();
             
+            if (_onMessage) _onMessage(msg);
+            _uiInstruction = msg;
+            
+            // Only debug the last one if we want to save serial bandwidth,
+            // but for now let's keep it simple.
             if (_debug) {
                 Serial.print("  [UDP] Recv: ");
                 Serial.println(msg);
             }
-            
-            if (_onMessage) _onMessage(msg);
-            _uiInstruction = msg;
-            
-            // Note: UDP doesn't reset failsafe for safety (stick to joystick for that)
-            // or we could add it if requested.
         }
     }
 }
