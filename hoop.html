@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Hoop Rangefinder</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: #0a0a0f;
+    font-family: 'Courier New', monospace;
+    color: #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px;
+  }
+  .header { text-align: center; margin-bottom: 24px; width: 100%; max-width: 640px; }
+  .header .sub { font-size: 11px; letter-spacing: 6px; color: #64748b; margin-bottom: 8px; text-transform: uppercase; }
+  .header h1 {
+    font-size: 28px; font-weight: 900;
+    background: linear-gradient(135deg, #22d3ee, #818cf8);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: -1px;
+  }
+  .header .diam { font-size: 11px; color: #475569; margin-top: 4px; }
+
+  #camera-box {
+    width: 100%; max-width: 640px;
+    position: relative; border-radius: 16px; overflow: hidden;
+    border: 1px solid #1e293b; background: #0f172a;
+    box-shadow: 0 0 40px rgba(34,211,238,0.08);
+    margin-bottom: 16px; aspect-ratio: 16/9;
+  }
+  #canvas {
+    width: 100%; height: 100%; display: block;
+  }
+  #camera-overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #0f172a; gap: 12px;
+  }
+  #camera-overlay .icon { font-size: 40px; }
+  #start-btn {
+    padding: 12px 28px;
+    background: linear-gradient(135deg, #22d3ee, #818cf8);
+    border: none; border-radius: 10px;
+    color: #000; font-weight: 700; font-size: 14px;
+    cursor: pointer; letter-spacing: 1px; font-family: inherit;
+  }
+  #cam-error { color: #f87171; font-size: 12px; text-align: center; max-width: 300px; display: none; }
+
+  #mode-badge {
+    position: absolute; top: 12px; left: 12px;
+    font-weight: 700; font-size: 11px;
+    padding: 4px 10px; border-radius: 6px; letter-spacing: 2px;
+    display: none;
+  }
+
+  .panel {
+    width: 100%; max-width: 640px;
+    background: #0f172a; border: 1px solid #1e293b;
+    border-radius: 10px; padding: 10px 16px;
+    font-size: 13px; color: #94a3b8; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #64748b; flex-shrink: 0;
+  }
+
+  #result-card {
+    width: 100%; max-width: 640px;
+    border-radius: 14px; margin-bottom: 14px;
+    padding: 16px 20px; display: none;
+    animation: fadeIn 0.4s ease;
+  }
+  #result-card .label { font-size: 11px; letter-spacing: 4px; margin-bottom: 6px; }
+  #result-card .big { font-size: 36px; font-weight: 900; line-height: 1; }
+  #result-card .small { font-size: 13px; color: #475569; margin-top: 6px; }
+
+  .controls { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 10px; }
+  .dist-row {
+    background: #0f172a; border: 1px solid #1e293b;
+    border-radius: 10px; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .dist-row label { font-size: 12px; color: #64748b; letter-spacing: 1px; }
+  .dist-row input {
+    width: 90px; background: #1e293b; border: 1px solid #334155;
+    border-radius: 6px; color: #f59e0b; font-family: inherit;
+    font-size: 16px; font-weight: 700; padding: 4px 10px; text-align: right;
+  }
+  .btn-row { display: flex; gap: 10px; }
+  .btn {
+    flex: 1; padding: 14px;
+    border-radius: 10px; font-family: inherit;
+    font-weight: 700; font-size: 13px;
+    cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
+  }
+  #calib-btn {
+    background: transparent;
+    border: 1.5px solid #334155;
+    color: #f59e0b;
+  }
+  #calib-btn.active { background: #78350f; border-color: #f59e0b; }
+  #measure-btn {
+    background: transparent;
+    border: 1.5px solid #1e293b;
+    color: #334155; cursor: not-allowed;
+  }
+  #measure-btn.ready { border-color: #164e63; color: #22d3ee; cursor: pointer; }
+  #measure-btn.active { background: rgba(34,211,238,0.15); border-color: #22d3ee; color: #22d3ee; }
+  #clear-btn {
+    padding: 10px; background: transparent;
+    border: 1px solid #1e293b; border-radius: 8px;
+    color: #475569; font-family: inherit; font-size: 12px;
+    cursor: pointer; letter-spacing: 1px; display: none;
+  }
+
+  #instructions {
+    max-width: 640px; width: 100%; margin-top: 16px;
+    padding: 14px 18px; background: #0f172a;
+    border: 1px solid #1e293b; border-radius: 12px;
+    font-size: 12px; color: #475569; line-height: 1.8;
+  }
+  #instructions .ilabel { color: #64748b; margin-bottom: 6px; letter-spacing: 2px; font-size: 10px; }
+
+  #controls-section { display: none; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="sub">Vision · Distance · Sensor</div>
+  <h1>HOOP RANGEFINDER</h1>
+  <div class="diam">NBA standard · ⌀ 45.72 cm</div>
+</div>
+
+<div id="camera-box">
+  <video id="video" style="display:none" playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="camera-overlay">
+    <div class="icon">📷</div>
+    <button id="start-btn">ENABLE CAMERA</button>
+    <div id="cam-error"></div>
+  </div>
+  <div id="mode-badge"></div>
+</div>
+
+<div class="panel" id="status-panel" style="display:none">
+  <div class="dot" id="status-dot"></div>
+  <span id="status-text">Start by calibrating</span>
+</div>
+
+<div id="result-card"></div>
+
+<div class="controls" id="controls-section">
+  <div class="dist-row">
+    <label>KNOWN DISTANCE (cm)</label>
+    <input type="number" id="calib-dist" value="200"/>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="calib-btn">⊕ CALIBRATE</button>
+    <button class="btn" id="measure-btn">⊙ MEASURE</button>
+  </div>
+  <button id="clear-btn">CLEAR POINTS</button>
+</div>
+
+<div id="instructions">
+  <div class="ilabel">HOW TO USE</div>
+  1. Stand at a <strong style="color:#94a3b8">known distance</strong> from the hoop (e.g. 200 cm)<br/>
+  2. Enter that distance above, tap <strong style="color:#f59e0b">CALIBRATE</strong><br/>
+  3. Click the <strong style="color:#f59e0b">left & right edges</strong> of the hoop ring<br/>
+  4. Done — now tap <strong style="color:#22d3ee">MEASURE</strong> anytime to get the distance
+</div>
+
+<script>
+const HOOP_DIAMETER_CM = 45.72;
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('camera-overlay');
+const modeBadge = document.getElementById('mode-badge');
+const statusPanel = document.getElementById('status-panel');
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+const resultCard = document.getElementById('result-card');
+const controlsSection = document.getElementById('controls-section');
+const calibBtn = document.getElementById('calib-btn');
+const measureBtn = document.getElementById('measure-btn');
+const clearBtn = document.getElementById('clear-btn');
+const calibDistInput = document.getElementById('calib-dist');
+const instructions = document.getElementById('instructions');
+
+let mode = 'idle'; // idle | calibrate | measure
+let points = [];
+let focalLength = null;
+let calibrated = false;
+let animId = null;
+
+document.getElementById('start-btn').onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = stream;
+    await video.play();
+    overlay.style.display = 'none';
+    statusPanel.style.display = 'flex';
+    controlsSection.style.display = 'flex';
+    startDrawLoop();
+  } catch(e) {
+    const err = document.getElementById('cam-error');
+    err.style.display = 'block';
+    err.textContent = 'Camera access denied. Please allow permissions.';
+  }
+};
+
+function startDrawLoop() {
+  cancelAnimationFrame(animId);
+  function loop() {
+    draw();
+    animId = requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+function draw() {
+  canvas.width = video.videoWidth || canvas.offsetWidth;
+  canvas.height = video.videoHeight || canvas.offsetHeight;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const color = mode === 'calibrate' ? '#f59e0b' : '#22d3ee';
+
+  points.forEach((p, i) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(i + 1, p.x - 4, p.y + 5);
+  });
+
+  if (points.length === 2) {
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    ctx.lineTo(points[1].x, points[1].y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([8, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const mx = (points[0].x + points[1].x) / 2;
+    const my = (points[0].y + points[1].y) / 2;
+    const dist = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+    ctx.fillStyle = color;
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(Math.round(dist) + 'px', mx + 8, my - 8);
+  }
+
+  if (mode !== 'idle' && points.length < 2) {
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, canvas.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(canvas.width, cy); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  updateStatus();
+}
+
+canvas.addEventListener('click', (e) => {
+  if (mode === 'idle' || points.length >= 2) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  points.push({ x, y });
+
+  if (points.length === 2) {
+    const dist = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+    if (mode === 'calibrate') {
+      const D = parseFloat(calibDistInput.value) || 200;
+      focalLength = (dist * D) / HOOP_DIAMETER_CM;
+      calibrated = true;
+      showResult('calib', { F: Math.round(focalLength), dist: D, px: Math.round(dist) });
+      setMode('idle');
+      calibBtn.classList.remove('active');
+      measureBtn.classList.add('ready');
+    } else if (mode === 'measure' && focalLength) {
+      const D = (HOOP_DIAMETER_CM * focalLength) / dist;
+      showResult('distance', { cm: Math.round(D), m: (D / 100).toFixed(2), px: Math.round(dist) });
+      setMode('idle');
+      measureBtn.classList.remove('active');
+    }
+    clearBtn.style.display = 'block';
+  }
+});
+
+function setMode(m) {
+  mode = m;
+  canvas.style.cursor = (m !== 'idle') ? 'crosshair' : 'default';
+
+  if (m === 'idle') {
+    modeBadge.style.display = 'none';
+  } else {
+    modeBadge.style.display = 'block';
+    modeBadge.textContent = m.toUpperCase();
+    modeBadge.style.background = m === 'calibrate' ? 'rgba(245,158,11,0.9)' : 'rgba(34,211,238,0.9)';
+    modeBadge.style.color = '#000';
+  }
+}
+
+function updateStatus() {
+  const msgs = {
+    idle: calibrated ? 'Calibrated ✓ — ready to measure' : 'Start by calibrating',
+    calibrate: points.length === 0 ? 'Click point 1 (left edge of hoop)' : 'Click point 2 (right edge of hoop)',
+    measure: points.length === 0 ? 'Click point 1 (left edge of hoop)' : 'Click point 2 (right edge of hoop)',
+  };
+  statusText.textContent = msgs[mode];
+  statusDot.style.background = mode !== 'idle' ? '#22d3ee' : calibrated ? '#4ade80' : '#64748b';
+  statusDot.style.boxShadow = mode !== 'idle' ? '0 0 6px #22d3ee' : '';
+}
+
+function showResult(type, data) {
+  resultCard.style.display = 'block';
+  if (type === 'calib') {
+    resultCard.style.border = '1px solid #92400e';
+    resultCard.style.background = 'rgba(120,53,15,0.2)';
+    resultCard.innerHTML = `
+      <div class="label" style="color:#f59e0b">CALIBRATION SAVED</div>
+      <div class="big" style="color:#fbbf24">F = ${data.F} px</div>
+      <div class="small">Measured at ${data.dist} cm · ${data.px}px span detected</div>
+    `;
+    instructions.style.display = 'none';
+  } else {
+    resultCard.style.border = '1px solid #164e63';
+    resultCard.style.background = 'rgba(8,51,68,0.4)';
+    resultCard.innerHTML = `
+      <div class="label" style="color:#22d3ee">DISTANCE TO HOOP</div>
+      <div class="big" style="color:#e0f2fe">${data.m} <span style="font-size:16px;color:#64748b">meters</span></div>
+      <div class="small">${data.cm} cm · ${data.px}px span · F=${Math.round(focalLength)}</div>
+    `;
+  }
+}
+
+calibBtn.onclick = () => {
+  if (mode === 'calibrate') {
+    setMode('idle');
+    calibBtn.classList.remove('active');
+    calibBtn.textContent = '⊕ CALIBRATE';
+  } else {
+    points = [];
+    resultCard.style.display = 'none';
+    clearBtn.style.display = 'none';
+    setMode('calibrate');
+    calibBtn.classList.add('active');
+    calibBtn.textContent = '✕ CANCEL';
+    if (mode === 'measure') { measureBtn.classList.remove('active'); measureBtn.textContent = '⊙ MEASURE'; }
+  }
+};
+
+measureBtn.onclick = () => {
+  if (!calibrated) return;
+  if (mode === 'measure') {
+    setMode('idle');
+    measureBtn.classList.remove('active');
+    measureBtn.textContent = '⊙ MEASURE';
+  } else {
+    points = [];
+    resultCard.style.display = 'none';
+    clearBtn.style.display = 'none';
+    setMode('measure');
+    measureBtn.classList.add('active');
+    measureBtn.textContent = '✕ CANCEL';
+    if (mode === 'calibrate') { calibBtn.classList.remove('active'); calibBtn.textContent = '⊕ CALIBRATE'; }
+  }
+};
+
+clearBtn.onclick = () => {
+  points = [];
+  clearBtn.style.display = 'none';
+};
+</script>
+</body>
+</html>
