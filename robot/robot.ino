@@ -68,6 +68,12 @@ int autoR = 0;
 bool autoFwdL = true;
 bool autoFwdR = true;
 
+// Stabilization & Pulsing logic
+unsigned long lastAutoActionMs = 0;
+bool isTurning = false;
+const unsigned long turnPulseMs = 125;    // Pulse length (avoid 'screaming' range)
+const unsigned long settleDurationMs = 200; // Wait time between pulses
+
 // -------------------- Motor control --------------------
 void setMotorRaw(int enaPwm, bool aForward, int enbPwm, bool bForward) {
   enaPwm = constrain(enaPwm, 0, 255);
@@ -144,7 +150,8 @@ void onMessage(const String& msg) {
     if (autoPilot) {
       Serial.println("AUTO MODE: ON");
       macroRunning = false; 
-      autoL = 0; autoR = 0; // Start still
+      autoL = 0; autoR = 0;
+      isTurning = false;
     } else {
       Serial.println("AUTO MODE: OFF");
       autoL = 0; autoR = 0;
@@ -155,18 +162,22 @@ void onMessage(const String& msg) {
 
   if (!autoPilot) return;
 
-  // Power tuning for "shitty motors" (~60% speed => PWM ~150)
-  int pwr = 145; 
-  int turnPwr = 135;
+  // Speeds: Increased slightly to overcome stall friction (stopping the 'screaming')
+  int pwr = 100;      // ~39% speed
+  int turnPwr = 105;   // ~41% speed (needs more juice to overcome turning friction)
 
   if (msg == "go left") {
+    if (!isTurning) { isTurning = true; lastAutoActionMs = millis(); }
     autoL = turnPwr; autoFwdL = false; autoR = turnPwr; autoFwdR = true;
   } else if (msg == "go right") {
+    if (!isTurning) { isTurning = true; lastAutoActionMs = millis(); }
     autoL = turnPwr; autoFwdL = true; autoR = turnPwr; autoFwdR = false;
   } else if (msg == "good") {
+    isTurning = false;
     autoL = pwr; autoFwdL = true; autoR = pwr; autoFwdR = true;
   } else if (msg == "searching") {
-    autoL = 110; autoFwdL = true; autoR = 110; autoFwdR = false;
+    isTurning = false;
+    autoL = pwr - 5; autoFwdL = true; autoR = pwr - 5; autoFwdR = false;
   }
 }
 
@@ -223,7 +234,7 @@ void setup() {
   Serial.println("============================");
 
   controller.configureL298N(ENA, IN1, IN2, ENB, IN3, IN4);
-  controller.setMotorMinPWM(90);
+  controller.setMotorMinPWM(100); // Increased to overcome stalling/screaming
   controller.setFailsafeTimeoutMs(1000);
 
   pinMode(ENA, OUTPUT);
@@ -268,6 +279,21 @@ void loop() {
   if (macroRunning) {
     runCurrentStep();
   } else if (autoPilot) {
-    setMotorRaw(autoL, autoFwdL, autoR, autoFwdR);
+    if (isTurning) {
+      unsigned long elapsed = millis() - lastAutoActionMs;
+      if (elapsed < turnPulseMs) {
+        // Active Turn pulse
+        setMotorRaw(autoL, autoFwdL, autoR, autoFwdR);
+      } else if (elapsed < (turnPulseMs + settleDurationMs)) {
+        // Stabilization Wait (Brake for better stability)
+        setMotorRaw(0, true, 0, true);
+      } else {
+        // Reset cycle
+        isTurning = false;
+      }
+    } else {
+      // Straight driving or idle
+      setMotorRaw(autoL, autoFwdL, autoR, autoFwdR);
+    }
   }
 }
