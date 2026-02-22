@@ -906,7 +906,7 @@ void Controller::debugMotors(int8_t left, int8_t right) {
     Serial.print(right);
     Serial.print(rfwd ? " FWD " : " REV ");
     Serial.print("PWM=");
-    Serial.println(rpwm);
+    Serial.print(rpwm);
 
     _lastDbgL = left;
     _lastDbgR = right;
