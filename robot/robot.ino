@@ -62,7 +62,13 @@ bool macroRunning = false;
 int stepIdx = 0;
 unsigned long stepStartMs = 0;
 
-// -------------------- Motor cowpwpe;ww;;eww;w;;;w;''''''''''''''''''''''''''''''''''''''''entrol --------------------
+bool autoPilot = false;
+int autoL = 0;
+int autoR = 0;
+bool autoFwdL = true;
+bool autoFwdR = true;
+
+// -------------------- Motor control --------------------
 void setMotorRaw(int enaPwm, bool aForward, int enbPwm, bool bForward) {
   enaPwm = constrain(enaPwm, 0, 255);
   enbPwm = constrain(enbPwm, 0, 255);
@@ -128,6 +134,39 @@ void runCurrentStep() {
     case STEP_TURN_L: driveDifferential(s.pwm, false, s.pwm, true, elapsed, s.ms); break;
     case STEP_TURN_R: driveDifferential(s.pwm, true, s.pwm, false, elapsed, s.ms); break;
     case STEP_PAUSE: stopWheels(); break;
+  }
+}
+
+// -------------------- Autopilot / Message Handling --------------------
+void onMessage(const String& msg) {
+  if (msg == "btn:AUTO") {
+    autoPilot = !autoPilot;
+    if (autoPilot) {
+      Serial.println("AUTO MODE: ON");
+      macroRunning = false; 
+      autoL = 0; autoR = 0; // Start still
+    } else {
+      Serial.println("AUTO MODE: OFF");
+      autoL = 0; autoR = 0;
+      setMotorRaw(0, true, 0, true);
+    }
+    return;
+  }
+
+  if (!autoPilot) return;
+
+  // Power tuning for "shitty motors" (~60% speed => PWM ~150)
+  int pwr = 145; 
+  int turnPwr = 135;
+
+  if (msg == "go left") {
+    autoL = turnPwr; autoFwdL = false; autoR = turnPwr; autoFwdR = true;
+  } else if (msg == "go right") {
+    autoL = turnPwr; autoFwdL = true; autoR = turnPwr; autoFwdR = false;
+  } else if (msg == "good") {
+    autoL = pwr; autoFwdL = true; autoR = pwr; autoFwdR = true;
+  } else if (msg == "searching") {
+    autoL = 110; autoFwdL = true; autoR = 110; autoFwdR = false;
   }
 }
 
@@ -209,11 +248,26 @@ void setup() {
   controller.registerButton("TRIML", btnTrimL);
   controller.registerButton("TRIMR", btnTrimR);
 
+  controller.registerCallback(onMessage);
+
   controller.beginSTA(true);
 }
 
 void loop() {
   controller.update();          // keep WiFi responsive
   catapult.write(targetAngle);  // keep servo commanded
-  if (macroRunning) runCurrentStep();
+
+  // MANUAL OVERRIDE: If user touches joystick, kill Autopilot
+  if (autoPilot && (abs(controller.speedLeft()) > 15 || abs(controller.speedRight()) > 15)) {
+    autoPilot = false;
+    autoL = 0; autoR = 0;
+    Serial.println("MANUAL OVERRIDE: AUTO OFF");
+    setMotorRaw(0, true, 0, true);
+  }
+
+  if (macroRunning) {
+    runCurrentStep();
+  } else if (autoPilot) {
+    setMotorRaw(autoL, autoFwdL, autoR, autoFwdR);
+  }
 }

@@ -93,22 +93,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
           <div id='instruction'>Waiting...</div>
         </div>
 
+        <div class='row' style='display:flex; justify-content:center;'>
+          <button id='autoBtn' style='width:100%; padding:20px; font-size:20px; font-weight:bold; border-radius:15px; border:none; background:#e4e6eb; color:#1c1e21; cursor:pointer; transition:all 0.3s;'>
+            START AUTOPILOT
+          </button>
+        </div>
+
         <div class='row'><div id='joy'><div id='stick'></div></div></div>
 
         <div class='row thrRow'>
           <div style='display:flex; justify-content:space-between; margin-bottom:10px'>
             <label style='font-weight:bold'>Speed Limit</label>
-            <span id='tval' style='color:#1877f2; font-weight:bold'>80%</span>
+            <span id='tval' style='color:#1877f2; font-weight:bold'>60%</span>
           </div>
-          <input id='thr' type='range' min='0' max='100' value='80' step='1'/>
+          <input id='thr' type='range' min='0' max='100' value='60' step='1'/>
         </div>
 
         <div id='status'>Ready</div>
 
         <script>
-        let x=0,y=0,t=80;
+        let x=0,y=0,t=60, auto=false;
         const joy=document.getElementById('joy'), stick=document.getElementById('stick');
         const thr=document.getElementById('thr'), tval=document.getElementById('tval'), status=document.getElementById('status');
+        const autoBtn=document.getElementById('autoBtn');
 
         function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
         function setStick(px,py){stick.style.left=(px-35)+'px'; stick.style.top=(py-35)+'px';}
@@ -122,6 +129,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
           fetch(`/drive?x=${x}&y=${y}&t=${t}`).catch(()=>{});
         }
 
+        autoBtn.onclick=()=>{
+          auto = !auto;
+          if(auto){
+            autoBtn.textContent = 'STOP AUTOPILOT';
+            autoBtn.style.background = '#fb3958';
+            autoBtn.style.color = '#fff';
+          } else {
+            autoBtn.textContent = 'START AUTOPILOT';
+            autoBtn.style.background = '#e4e6eb';
+            autoBtn.style.color = '#1c1e21';
+          }
+          fetch(`/btn?id=AUTO`).catch(()=>{});
+        };
+
         function posToXY(cX,cY){
           const r=joy.getBoundingClientRect();
           const dx=cX-r.left-r.width/2, dy=cY-r.top-r.height/2;
@@ -129,7 +150,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
           const ndx=clamp(dx,-max,max), ndy=clamp(dy,-max,max);
           x=Math.round((ndx/max)*100); y=Math.round((-ndy/max)*100);
           if(Math.abs(x)<5)x=0; if(Math.abs(y)<5)y=0;
-          setStick(130+ndx, 130+ndy); updateStatus(); sendDrive();
+          setStick(130+ndx, 130+ndy); 
+          
+          if(x!==0 || y!==0) {
+             // Disable visual autopilot button if manual control starts
+             if(auto){ auto=false; autoBtn.textContent='START AUTOPILOT'; autoBtn.style.background='#e4e6eb'; autoBtn.style.color='#1c1e21'; }
+          }
+
+          updateStatus(); sendDrive();
         }
 
         let dragging=false;
