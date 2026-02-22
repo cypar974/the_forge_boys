@@ -27,7 +27,8 @@
 3. Run the script from your terminal or IDE.
 
 ## 5. Operation & Monitoring
-- **Web UI**: Open [http://172.20.10.12/](http://172.20.10.12/) in your browser (phone or laptop).
+- **Dashboard**: Open [http://localhost:8000](http://localhost:8000) in your laptop browser.
+- **Prerequisite**: `main.py` **must be running** for the dashboard to work.
 - **Joystick**: You can manually drive the robot from this page.
-- **Instruction Display**: The blue box at the top will show "go left" or "go right" live when `main.py` detects a color.
-- **Vision**: `main.py` will automatically send these instructions to the display whenever it detects the target colors.
+- **Instruction Display**: The blue box at the top will show "go left" or "go right" live when the vision system detects a color.
+- **Near-Instant Control**: The system now uses high-speed UDP for ultra-low latency movements.

@@ -59,7 +59,6 @@ public:
 void setMotorMinPWM(uint8_t pwm);
 
 private:
-	void handleSlider(WiFiClient& client, const String& requestLine);
 
 enum LedState {
     LED_BOOTING,
@@ -68,26 +67,12 @@ enum LedState {
     LED_FAILSAFE,
     LED_ERROR
 };
-    void printWiFiStatus() const;
-
-    void handleClient(WiFiClient& client);
     void processUDP();
-    String readRequestLine(WiFiClient& client);
 
-    void sendHttpOk(WiFiClient& client, const char* contentType, const String& body);
-    void sendHttpNotFound(WiFiClient& client);
-
-    void handleRoot(WiFiClient& client);
-    void handleDrive(WiFiClient& client, const String& requestLine);
-    void handleBtn(WiFiClient& client, const String& requestLine);
-    void handleControlMsg(WiFiClient& client, const String& requestLine);
-    void handleHealth(WiFiClient& client);
-    void handleStatus(WiFiClient& client);
-
-    static bool extractQueryInt(const String& requestLine, const char* key, int& outValue);
-    static int clampInt(int v, int lo, int hi);
-
+private:
     void applySmoothingAndNotify();
+
+    static int clampInt(int v, int lo, int hi);
 
     // -------- L298N internals --------
     void motorInitSafeStop();
@@ -128,7 +113,6 @@ private:
 
     static const int UDP_PORT = 4210;
 
-    WiFiServer _server;
     WiFiUDP _udp;
     int _status = WL_IDLE_STATUS;
 
