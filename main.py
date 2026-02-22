@@ -23,6 +23,10 @@ def send_udp(msg):
     except Exception as e:
         print(f"UDP Error: {e}")
 
+# Recovery state
+last_direction = "none" # "left", "right", or "none"
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass # Suppress server logs to keep console clean
@@ -256,12 +260,51 @@ while True:
         cv2.circle(frame, (cx_top, int(M_top["m01"] / M_top["m00"]) + int(height*0.5)), 8, (0, 255, 255), -1)
         
     target_msg = "searching"
-    if cx_bottom is not None:
-        if cx_bottom < left_bound: target_msg = "go left"
-        elif cx_bottom > right_bound: target_msg = "go right"
-        else: target_msg = "good"
+    
+    # New Anticipatory Logic:
+    # If BOTH points are seen, we turn if EITHER is outside.
+    # If only one is seen, we turn if it is outside.
+    
+    if cx_bottom is not None and cx_top is not None:
+        # Both visible - if top is already turning, we should start turning early
+        if cx_bottom < left_bound or cx_top < left_bound:
+            target_msg = "go left"
+            last_direction = "left"
+        elif cx_bottom > right_bound or cx_top > right_bound:
+            target_msg = "go right"
+            last_direction = "right"
+        else:
+            target_msg = "good"
+            
+    elif cx_bottom is not None:
+        # Only bottom visible
+        if cx_bottom < left_bound:
+            target_msg = "go left"
+            last_direction = "left"
+        elif cx_bottom > right_bound:
+            target_msg = "go right"
+            last_direction = "right"
+        else:
+            target_msg = "good"
+            
+    elif cx_top is not None:
+        # Only top visible (anticipating a turn or recovery)
+        if cx_top < left_bound:
+            target_msg = "go left"
+            last_direction = "left"
+        elif cx_top > right_bound:
+            target_msg = "go right"
+            last_direction = "right"
+        else:
+            target_msg = "good"
+
+    # Priority 3: Last known direction (recovery)
+    elif last_direction != "none":
+        target_msg = f"go {last_direction}"
+
             
     # UDP Dispatch (High Speed)
+
     current_time = time.time()
     if (target_msg != last_instruction) or (current_time - last_send_time > SEND_INTERVAL):
         send_udp(target_msg)

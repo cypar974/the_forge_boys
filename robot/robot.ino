@@ -164,7 +164,8 @@ void onMessage(const String& msg) {
 
   // Speeds: Increased slightly to overcome stall friction (stopping the 'screaming')
   int pwr = 100;      // ~39% speed
-  int turnPwr = 105;   // ~41% speed (needs more juice to overcome turning friction)
+  int turnPwr = 135;   // Increased to 135 (from 105) for more decisive turning
+
 
   if (msg == "go left") {
     if (!isTurning) { isTurning = true; lastAutoActionMs = millis(); }
